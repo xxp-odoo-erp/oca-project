@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
 
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from odoo.fields import Date
 from odoo.http import Request
@@ -22,7 +22,6 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
     @classmethod
     def setUpClass(cls):
         super(TestPortalController, cls).setUpClass()
-
         # Create test project
         cls.project = cls.env["project.project"].create(
             {
@@ -38,14 +37,14 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
                 "project_ids": [(6, 0, [cls.project.id])],
             }
         )
-        cls.user_portal.password = cls.user_portal.login
+        cls.mock_request = MagicMock(env=cls.env)
 
         # Set portal task creation stage
         cls.project.portal_stage_id = cls.stage_backlog
 
         # Set portal allowed users
         cls.project.portal_user_ids = cls.user_portal
-
+        cls.user_portal.password = cls.user_portal.login
         cls.controller = ProjectCustomerNewPortal()
 
     def test_validate_task_fields_all_valid(self):
@@ -55,27 +54,22 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
             "description": "Test Description",
             "date_deadline": Date.to_string(date.today() + timedelta(days=1)),
         }
-        error, error_message = self.controller._validate_task_fields(data)
+
+        error, error_message = self.controller._validate_task_fields(
+            data, task_creation=True
+        )
 
         self.assertFalse(error)
         self.assertFalse(error_message)
-
-    def test_validate_task_fields_missing_name(self):
-        """Test _validate_task_fields with missing name."""
-        data = {
-            "description": "Test Description",
-        }
-        error, error_message = self.controller._validate_task_fields(data)
-
-        self.assertIn("name", error)
-        self.assertEqual(error["name"], "missing")
 
     def test_validate_task_fields_missing_description(self):
         """Test _validate_task_fields with missing description."""
         data = {
             "name": "Test Task",
         }
-        error, error_message = self.controller._validate_task_fields(data)
+        error, error_message = self.controller._validate_task_fields(
+            data, task_creation=True
+        )
 
         self.assertIn("description", error)
         self.assertEqual(error["description"], "missing")
@@ -86,8 +80,11 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
             "name": "Test Task",
             "description": "Test Description",
             "date_deadline": Date.to_string(date.today() - timedelta(days=1)),
+            "project_id": self.project.id,
         }
-        error, error_message = self.controller._validate_task_fields(data)
+        error, error_message = self.controller._validate_task_fields(
+            data, task_creation=True
+        )
 
         self.assertIn("date_deadline", error)
         self.assertEqual(error["date_deadline"], "invalid")
@@ -99,8 +96,9 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
             "name": "Test Task",
             "description": "Test Description",
         }
-        error, error_message = self.controller._validate_task_fields(data)
-
+        error, error_message = self.controller._validate_task_fields(
+            data, task_creation=True
+        )
         self.assertFalse(error)
         self.assertFalse(error_message)
 
@@ -135,7 +133,6 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
         data = {
             "name": "Test Task",
             "description": "Test Description",
-            "priority": "1",
             "user_ids": [(6, 0, [1])],
         }
         values = self.controller._prepare_task_values(data)
@@ -231,7 +228,7 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
         """Test portal_project_create_task when not allowed."""
         self.authenticate(self.user_portal.login, self.user_portal.login)
 
-        # Remove portal stage
+        # Remove portal stage, it is not allowed to create without default portal stage
         self.project.portal_stage_id = False
 
         response = self.url_open(f"/my/projects/{self.project.id}/task/new")
@@ -340,8 +337,8 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Task not found!", response.text)
 
-    def test_portal_project_edit_task_not_allowed(self):
-        """Test portal_project_edit_task when not allowed."""
+    def test_portal_project_edit_task_allowed(self):
+        """Test portal_project_edit_task allowed even if default stage not set on prj."""
         self.authenticate(self.user_portal.login, self.user_portal.login)
 
         # Create task
@@ -362,8 +359,7 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
         self.project.portal_stage_id = False
 
         response = self.url_open(f"/my/projects/{self.project.id}/task/{task.id}/edit")
-        self.assertEqual(response.status_code, 403)
-        self.assertIn("You are not allowed to edit this task.", response.text)
+        self.assertEqual(response.status_code, 200)
 
     def test_portal_project_edit_task_wrong_project(self):
         """Test portal_project_edit_task with task from different project."""
@@ -387,3 +383,69 @@ class TestPortalController(TestProjectPortalCommon, HttpCaseWithUserPortal):
 
         response = self.url_open(f"/my/projects/{self.project.id}/task/{task.id}/edit")
         self.assertEqual(response.status_code, 400)
+
+    def test_edit_button_visibility(self):
+        # Create a project and a task
+        project = self.env["project.project"].create({"name": "Test Project"})
+        task = (
+            self.env["project.task"]
+            .sudo()
+            .create({"name": "Task1", "project_id": project.id})
+        )
+        self.authenticate(self.user_portal.login, self.user_portal.login)
+        # Without portal_user_ids, portal user should still see "Edit" link
+        response = self.url_open(f"/my/projects/{project.id}")
+        self.assertIn(f"/my/projects/{project.id}/task/{task.id}/edit", response.text)
+        # Allow the portal user
+        project.write({"portal_user_ids": [(4, self.user_portal.id)]})
+        response = self.url_open(f"/my/projects/{project.id}")
+        self.assertIn(f"/my/projects/{project.id}/task/{task.id}/edit", response.text)
+
+    def test_create_button_visibility(self):
+        # Create project with a portal stage (required for creating tasks)
+        stage = self.env["project.task.type"].create(
+            {"name": "Stage A", "project_ids": [(6, 0, [])]}
+        )
+        project = self.env["project.project"].create(
+            {"name": "Test Project", "portal_stage_id": stage.id}
+        )
+        self.authenticate(self.user_portal.login, self.user_portal.login)
+        # Without portal_user_ids, no "Create" button
+        response = self.url_open(f"/my/projects/{project.id}")
+        self.assertNotIn(f"/my/projects/{project.id}/task/new", response.text)
+        # Allow creation by portal user
+        project.write({"portal_user_ids": [(4, self.user_portal.id)]})
+        response = self.url_open(f"/my.projects/{project.id}")
+        self.assertIn(f"/my/projects/{project.id}/task/new", response.text)
+        # Remove portal_user_ids but enable follower creation
+        project.write(
+            {"portal_user_ids": [(5,)], "all_project_followers_can_create": True}
+        )
+        project.message_subscribe(partner_ids=[self.user_portal.partner_id.id])
+        response = self.url_open(f"/my/projects/{project.id}")
+        self.assertIn(f"/my/projects/{project.id}/task/new", response.text)
+
+    def test_field_visibility_and_defaults(self):
+        # Create project and configure which fields portal can edit
+        self.authenticate(self.user_portal.login, self.user_portal.login)
+        stage = self.env["project.task.type"].create(
+            {"name": "Stage B", "project_ids": [(6, 0, [])]}
+        )
+        project = self.env["project.project"].create(
+            {"name": "Test Project", "portal_stage_id": stage.id}
+        )
+        date_field = self.env["ir.model.fields"].search(
+            [("model", "=", "project.task"), ("name", "=", "date_deadline")]
+        )
+        name_field = self.env["ir.model.fields"].search(
+            [("model", "=", "project.task"), ("name", "=", "name")]
+        )
+        # Allow portal to set name and deadline
+        project.write(
+            {"portal_create_task_fields": [(4, name_field.id), (4, date_field.id)]}
+        )
+        # On the Create Task page, the date_deadline input should appear
+        response = self.url_open(f"/my/projects/{project.id}/task/new")
+        self.assertIn('name="date_deadline"', response.text)
+        # The default task name should include the portal user's name
+        self.assertIn("Portal task from", response.text)

@@ -10,6 +10,12 @@ odoo.define("portal.PortalProjectTaskCreate", function (require) {
         start: function () {
             var def = this._super.apply(this, arguments);
 
+            var $textarea = this.$("textarea.o_wysiwyg_loader");
+            // Return a fulfilled promise if no textarea exists (editing of descriptions
+            // is not enabled)
+            if (!$textarea.length) {
+                return Promise.all([def, Promise.resolve()]);
+            }
             var toolbar = [
                 ["style", ["style"]],
                 ["font", ["bold", "italic", "underline", "clear"]],
@@ -19,7 +25,6 @@ odoo.define("portal.PortalProjectTaskCreate", function (require) {
                 ["history", ["undo", "redo"]],
             ];
 
-            var $textarea = this.$("textarea.o_wysiwyg_loader");
             var loadProm = wysiwygLoader
                 .loadFromTextarea(this, $textarea[0], {
                     toolbar: toolbar,

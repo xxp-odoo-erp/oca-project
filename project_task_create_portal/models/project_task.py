@@ -5,23 +5,14 @@ from odoo.exceptions import AccessError
 class ProjectTask(models.Model):
     _inherit = "project.task"
 
-    @api.model
-    def _check_portal_fields_access(self):
-        return ["name", "description", "date_deadline"]
-
     def check_portal_edit_access(self):
         """Check if the current user has portal access to edit this task."""
         # Portal users can only access tasks in projects with portal task creation enabled
-        self.ensure_one()
-        if not self.project_id.is_portal_task_creation_allowed():
+        if not self.project_id.is_portal_task_editing_allowed():
             return False
-
-        # Portal users can only access tasks in the allowed stage
-        if self.stage_id != self.project_id.portal_stage_id:
-            return False
-
-        # Portal users can only edit their own tasks
-        if self.create_uid.id != self.env.context.get("uid", self.env.user.id):
+        active_user = self.env.context.get("uid", self.env.user.id)
+        if self.create_uid.id != active_user and self.project_id.edit_only_creator:
+            # Portal users can only edit their own tasks
             return False
         return True
 
