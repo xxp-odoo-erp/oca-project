@@ -30,11 +30,10 @@ class ProjectCustomerNewPortal(ProjectCustomerPortal):
                 user_name = (
                     request.env["res.users"]
                     .sudo()
-                    .browse(int(request.env.context["uid"]))
+                    .browse(int(request.env.context.get("uid", request.env.user.id))
                     .name
                 )
-                default = " ".join(
-                    ["Portal task from", user_name, "generated on", str(Datetime.now())]
+                default = f"Portal task from {user_name} generated on {Datetime.now()}"
                 )
             if fieldname == "date_deadline":
                 default = str(
