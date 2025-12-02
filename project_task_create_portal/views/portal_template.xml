@@ -55,16 +55,15 @@
                 <t t-foreach="error_message" t-as="err"><t t-esc="err" /><br /></t>
             </div>
         </div>
-        <div
-            t-attf-class="form-group #{error.get('name') and 'o_has_error' or ''} col-xl-6"
-        >
+        <div>
             <label class="col-form-label" for="name">Name</label>
             <input
                 type="text"
                 t-attf-class="form-control #{error.get('name') and 'is-invalid' or ''}"
                 name="name"
                 required="True"
-                t-att-value="name or ''"
+                t-att-readonly="not editable_portal_name"
+                t-att-value="name or default_portal_name"
             />
         </div>
         <div
@@ -77,10 +76,10 @@
                 name="date_deadline"
                 id="date_deadline"
                 min="today"
-                t-att-value="date_deadline or ''"
+                t-att-readonly="not editable_date_deadline"
+                t-att-value="date_deadline or default_portal_date_deadline"
             />
         </div>
-
         <div
             t-attf-class="form-group #{error.get('description') and 'o_has_error' or ''} col-xl-12"
         >
@@ -90,9 +89,48 @@
                 name="description"
                 rows="10"
                 required="True"
-                t-att-value="description or ''"
-                t-esc="description or ''"
-            />
+                t-att-readonly="not editable_description"
+            >
+                <t t-esc="description or ''" />
+            </textarea>
+        </div>
+        <div
+            t-attf-class="form-group #{error.get('priority') and 'o_has_error' or ''} col-xl-6"
+        >
+            <label class="col-form-label" for="priority">Priority</label>
+            <select
+                name="priority"
+                t-att-readonly="not editable_portal_priority"
+                t-attf-class="form-control #{error.get('priority') and 'is-invalid' or ''}"
+            >
+                <t t-foreach="priority_selection" t-as="prio">
+                    <option
+                        t-att-value="prio[0]"
+                        t-att-selected="(priority == prio[0]) and 'selected' or None"
+                    >
+                        <t t-esc="prio[1]" />
+                    </option>
+                </t>
+            </select>
+        </div>
+        <div
+            t-attf-class="form-group #{error.get('stage_id') and 'o_has_error' or ''} col-xl-6"
+        >
+            <label class="col-form-label" for="stage_id">Stage</label>
+            <select
+                name="stage_id"
+                t-att-readonly="not editable_portal_stage_id"
+                t-attf-class="form-control #{error.get('stage_id') and 'is-invalid' or ''}"
+            >
+                <t t-foreach="stage_options" t-as="stage">
+                    <option
+                        t-att-value="stage['id']"
+                        t-att-selected="(stage_id == stage['id']) and 'selected' or None"
+                    >
+                        <t t-esc="stage['name']" />
+                    </option>
+                </t>
+            </select>
         </div>
     </template>
 
@@ -210,6 +248,33 @@
             <attribute
                 name="t-if"
             >not task.project_id.portal_hide_assigned_users and assignees</attribute>
+        </xpath>
+        <!-- adding the add task button in the project header -->
+        <xpath expr="//div[@name='project_name']" position="after">
+            <t t-set="project" t-value="tasks[0].sudo().project_id" />
+            <div t-if="project.is_portal_task_creation_allowed()" class="ms-lg-2">
+                <div class="btn-group">
+                    <a
+                        t-att-href="'/my/projects/%s/task/new' % (project.id)"
+                        id="portal_grouping_create_task"
+                        class="btn btn-success btn-sm"
+                    >
+                        <i class="fa fa-plus" /> Create New Task
+                    </a>
+                </div>
+            </div>
+        </xpath>
+        <xpath expr="//t[@t-foreach='tasks']/tr/td[last()]" position="after">
+            <td t-if="task.check_portal_edit_access()" class="ms-lg-2">
+                <div class="btn-small" id="portal_task_edit_row">
+                    <a
+                        t-att-href="'/my/projects/%s/task/%s/edit' % (task.project_id.id, task.id)"
+                        class="btn btn-small"
+                    >
+                        <i class="fa fa-edit" /> Edit
+                    </a>
+                </div>
+            </td>
         </xpath>
     </template>
 
